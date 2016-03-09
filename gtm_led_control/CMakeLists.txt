@@ -8,10 +8,15 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
 )
 
-set(OPC_COMMIT, "dbf4b54fe70c28b6e926697ee732d483edbd77e9")
-# download files from openpixelcontrol
 
-    file(DOWNLOAD "https://raw.githubusercontent.com/zestyping/openpixelcontrol/${OPC_COMMIT}/python_clients/opc.py" "scripts/opc.py")
+# download files from openpixelcontrol
+set(LOCAL_OPC_PATH  "${PROJECT_SOURCE_DIR}/scripts/opc.py")
+set(OPC_COMMIT  "dbf4b54fe70c28b6e926697ee732d483edbd77e9")
+
+if (NOT EXISTS "${LOCAL_OPC_PATH}")
+    file(DOWNLOAD "https://raw.githubusercontent.com/zestyping/openpixelcontrol/${OPC_COMMIT}/python_clients/opc.py" "${LOCAL_OPC_PATH}")
+endif()
+    
 
 
 ## System dependencies are found with CMake's conventions

@@ -1,2 +1,4 @@
 .directory
 *.kate-swp
+gtm_led_control/scripts/opc.py
+*.pyc

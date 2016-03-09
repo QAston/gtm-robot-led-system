@@ -11,6 +11,10 @@
   <build_depend>rospy</build_depend>
   <run_depend>rospy</run_depend>
   <run_depend>fadecandy</run_depend>
+  <run_depend>python-subprocess32-pip</run_depend>
+  <run_depend>message_runtime</run_depend>
+  <build_depend>std_msgs</build_depend>
+  <run_depend>std_msgs</run_depend>
   <export>
   </export>
 </package>
