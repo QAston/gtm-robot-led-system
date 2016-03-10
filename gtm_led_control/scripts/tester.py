@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 import rospy
-from std_msgs.msg import Int32, Empty
-from gtm_animation_msgs.msg import OneshotAnimationInfo, LoopAnimationAction, LoopAnimationGoal, LoopAnimationResult, LoopAnimationInfo
-import actionlib
+from std_msgs.msg import Int32
+from gtm_animation_msgs.msg import OneshotAnimationInfo, LoopAnimationInfo, LoopAnimation
 
 rospy.init_node('led_control_tester')
 
@@ -10,8 +9,9 @@ battery_publisher = rospy.Publisher('battery_level', Int32, latch = True, queue_
 
 confirm_publisher = rospy.Publisher('oneshot_anim', OneshotAnimationInfo, queue_size = 1)
 
-client = actionlib.SimpleActionClient('loop_animation', LoopAnimationAction)
-client.wait_for_server()
+loop_publisher = rospy.Publisher('loop_animation', LoopAnimation, queue_size = 1)
+
+loop_stop_publisher = rospy.Publisher('loop_animation_stop', LoopAnimationInfo, queue_size = 1)
 
 rate = rospy.Rate(1)
 
@@ -25,12 +25,12 @@ while not rospy.is_shutdown():
     
   if (battery_level % 10) == 0:
     if (battery_level % 20) == 0:
-      goal = LoopAnimationGoal()
-      goal.animation = LoopAnimationInfo(LoopAnimationInfo.WAITING)
-      client.send_goal(goal)
+      msg = LoopAnimation()
+      msg.animation = LoopAnimationInfo(LoopAnimationInfo.WAITING)
+      msg.loop_duration = rospy.Duration(15)
+      loop_publisher.publish(msg)
     else:
-      rospy.loginfo("send goal cancel")
-      client.cancel_all_goals()
+      loop_stop_publisher.publish(LoopAnimationInfo(LoopAnimationInfo.WAITING))
   
   battery_level -= 1
   if battery_level < 0:

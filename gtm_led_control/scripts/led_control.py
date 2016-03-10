@@ -4,16 +4,17 @@ Topics subscribed to:
 battery_level - int32 value 0-100 to display, latched
 opc_info - string adress:port of opc server
 oneshot_anim - OneshotAnimationInfo - when message received starts a oneshot animation with given id
+loop_anim - LoopAnimation - starts/continues a loop animation for given duration
+loop_anim_stop - LoopAnimationInfo - stops a loop animation with given id
 """
 
 import rospy
-from std_msgs.msg import Int32, String, Empty
-from gtm_animation_msgs.msg import OneshotAnimationInfo, LoopAnimationAction, LoopAnimationGoal, LoopAnimationResult
+from std_msgs.msg import Int32, String
+from gtm_animation_msgs.msg import OneshotAnimationInfo, LoopAnimationInfo, LoopAnimation
 import opc
 import time
 import random
 import math
-import actionlib
 
 client = None
 
@@ -44,16 +45,13 @@ brightness_coeff = 150.0/255
 #priority - integer assumed constant
 #done - true when animation finished
 #animate - draws animation frame on given pixels
-
-
 class IdleAnimation:
+  priority = 0
+  
   def __init__(self):
     self.battery_level = 0
     self.noise_clock = 0.01
-    
-  def priority(self):
-    return 0
-  
+
   def done(self):
     return False
     
@@ -113,21 +111,25 @@ class IdleAnimation:
 class WaitingAnimation:
   bar_start = circle_idx
   bar_len = circle_len
+  priority = 3
   
   def __init__(self):
     self.start_clock = None
-    
-  def priority(self):
-    return 3
+    self.loop_anim_duration = rospy.Duration(0)
   
   def done(self):
-    return False
+    return self.loop_anim_duration <= rospy.Duration(0)
+    
+  def set_duration(self, loop_duration):
+    self.loop_anim_duration = loop_duration
 
   def animate(self, pixels, clock, clockdiff):
     if self.start_clock is None:
       self.start_clock = clock
+      
+    self.loop_anim_duration = self.loop_anim_duration - rospy.Duration(clockdiff)
 
-    duration = 0.02
+    duration = 1
     head_pos = math.fmod(clock - self.start_clock, duration) * WaitingAnimation.bar_len / duration
 
     for i in range(WaitingAnimation.bar_start, WaitingAnimation.bar_start + WaitingAnimation.bar_len, 1):
@@ -151,14 +153,12 @@ class WaitingAnimation:
 class ConfirmAnimation:
   bar_start = first_stripe_idx
   bar_len = stripe_len * 2
+  priority = 9
   
   def __init__(self):
     self.start_clock = None
     self.is_done = False
-    
-  def priority(self):
-    return 9;
-  
+
   def done(self):
     return self.is_done
 
@@ -166,7 +166,7 @@ class ConfirmAnimation:
     if self.start_clock is None:
       self.start_clock = clock
 
-    duration = 0.02
+    duration = 1
     if (clock - self.start_clock) > duration:
       self.is_done = True
       return
@@ -202,21 +202,25 @@ class ConfirmAnimation:
     return (0 , 0, 0)
 
 animations = [IdleAnimation()]
+oneshot_animation_classes = [ConfirmAnimation]
+loop_animation_classes = [WaitingAnimation]
+
 
 def add_animation(anim, remove_callback = None):
-  animations.insert(anim.priority(), anim)
+  animations.insert(anim.__class__.priority, anim)
   
 def remove_animation(anim):
-  animations.remove(anim)
+  if len(animations) > anim.__class__.priority:
+    animations[anim.__class__.priority] = None
 
 def animate():
   rate = rospy.Rate(20)
   pixels = [(0,0,0) for x in range(total_len)]
-  last_clock = time.clock()
+  last_clock = time.time()
   clock = last_clock
   while not rospy.is_shutdown():
     last_clock = clock
-    clock = time.clock()
+    clock = time.time()
     clock_diff = clock - last_clock
     if client is not None:
       for anim in animations:
@@ -230,31 +234,58 @@ def animate():
       else:
         rospy.logerr("Could not send pixels to opc server!")
     rate.sleep()
-    
 
+def oneshot_req_received(msg):
+  rospy.loginfo("Requested starting oneshot animation %s!", msg.animation_id)
+  anim_class = list_get(oneshot_animation_classes, msg.animation_id)
+  if anim_class is None:
+    rospy.logerr("Invalid oneshot animation id %s, skipped.", msg.animation_id)
+    return
+  add_animation(anim_class())
+  
+def list_get(l, i):
+  if i < len(l) and i >= 0:
+    return l[i]
+  return None
+  
+def loop_continue_received(msg):
+  rospy.loginfo("Requested starting/continuing loop animation %s!", msg.animation.animation_id)
+  anim_class = list_get(loop_animation_classes, msg.animation.animation_id)
+  if anim_class is None:
+    rospy.logerr("Invalid loop animation id %s, skipped.", msg.animation.animation_id)
+    return
+  
+  existing_anim = list_get(animations, anim_class.priority)
+  if existing_anim is not None:
+    existing_anim.set_duration(msg.loop_duration)
+    rospy.loginfo("Animation already active, continuing...")
+  else:
+    existing_anim = anim_class()
+    existing_anim.set_duration(msg.loop_duration)
+    add_animation(existing_anim)
+    rospy.loginfo("Started loop animation.")
     
-def oneshot_req_sent(msg):
-  rospy.loginfo("Starting oneshot animation %s!", msg.animation_id)
-  add_animation(ConfirmAnimation())
   
-def loop_req_sent():
-  rospy.loginfo("Starting loop animation")
-  loop_server.accept_new_goal()
-  add_animation(WaitingAnimation())
   
-def loop_req_aborted():
-  rospy.loginfo("Preempted loop animation!")
-  return
+def loop_cancel_received(msg):
+  rospy.loginfo("Requested canceling loop animation %s!", msg.animation_id)
+  anim_class = list_get(loop_animation_classes, msg.animation_id)
+  if anim_class is None:
+    rospy.logerr("Invalid loop animation id %s, skipped.", msg.animation_id)
+    return
+
+  existing_anim = list_get(animations, anim_class.priority)
+  if existing_anim is not None:
+    remove_animation(existing_anim)
+    rospy.loginfo("Loop animation id %s cancelled.", msg.animation_id)
 
 #node code:
 rospy.init_node('led_control')
 battery_sub = rospy.Subscriber('battery_level', Int32, lambda msg: animations[0].battery_level_changed(msg.data))
-confirm_anim_sub = rospy.Subscriber('oneshot_anim', OneshotAnimationInfo, oneshot_req_sent)
+confirm_anim_sub = rospy.Subscriber('oneshot_anim', OneshotAnimationInfo, oneshot_req_received)
 opc_info_sub = rospy.Subscriber('opc_info', String, opc_server_changed)
-loop_server = actionlib.SimpleActionServer('loop_animation', LoopAnimationAction, None, False)
-loop_server.register_goal_callback(loop_req_sent)
-loop_server.register_preempt_callback(loop_req_aborted)
-loop_server.start()
+loop_sub = rospy.Subscriber('loop_animation', LoopAnimation, loop_continue_received)
+loop_stop_sub = rospy.Subscriber('loop_animation_stop', LoopAnimationInfo, loop_cancel_received)
 
 animate()
 

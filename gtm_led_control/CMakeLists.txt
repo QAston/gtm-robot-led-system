@@ -7,6 +7,7 @@ project(gtm_led_control)
 find_package(catkin REQUIRED COMPONENTS
   rospy
   gtm_animation_msgs
+  std_msgs
 )
 
 
