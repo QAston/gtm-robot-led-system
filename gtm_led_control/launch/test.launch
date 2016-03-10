@@ -1,0 +1,5 @@
+ <launch>
+   <node pkg="gtm_led_control" type="led_control.py" name="led_control"/>
+   <node pkg="gtm_led_control" type="tester.py" name="tester"/>
+   <node pkg="gtm_openpixelcontrol_server_fadecandy" type="opc_server.py" name="opc_server"/>
+ </launch>

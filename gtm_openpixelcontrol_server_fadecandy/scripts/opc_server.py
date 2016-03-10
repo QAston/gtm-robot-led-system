@@ -16,10 +16,12 @@ rospy.init_node('opc_server')
 pub = rospy.Publisher('opc_info', String, latch = True, queue_size=1)
 
 while not rospy.is_shutdown():
+  #TODO: allow setting config .json from parameter_server
   process = subprocess.Popen(['/opt/fadecandy/fcserver'], universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
   rospy.sleep(2)
   if process.poll() is None:
     rospy.loginfo("Succesfully started fadecandy server.")
+    #TODO: this should be configurable, but there's no need for that atm
     pub.publish("127.0.0.1:7890")
   else:
     rospy.logfatal("Failed to start fadecandy server, errorcode: %s", process.returncode)

@@ -42,7 +42,7 @@ max_brightness = 150
 brightness_coeff = 150.0/255
 
 #animations
-#priority - integer assumed constant
+#priority - integer assumed constant, class member
 #done - true when animation finished
 #animate - draws animation frame on given pixels
 class IdleAnimation:
@@ -106,8 +106,8 @@ class IdleAnimation:
     rospy.loginfo("Got new battery level %s", level)
     self.battery_level = level
 
-#calc target pixel
-#calc other pixels relative to target pixel
+#loop animation
+# should have set_duration method taking rospy.Duration
 class WaitingAnimation:
   bar_start = circle_idx
   bar_len = circle_len
@@ -150,6 +150,7 @@ class WaitingAnimation:
     
     return (0 , 0, 0)
 
+#oneshot animation
 class ConfirmAnimation:
   bar_start = first_stripe_idx
   bar_len = stripe_len * 2
