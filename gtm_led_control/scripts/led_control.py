@@ -3,10 +3,11 @@
 Topics subscribed to:
 battery_level - int32 value 0-100 to display, latched
 opc_info - string adress:port of opc server
+oneshot_anim_confitm - empty - when message received starts confirm animation
 """
 
 import rospy
-from std_msgs.msg import Int32, String
+from std_msgs.msg import Int32, String, Empty
 import opc
 import time
 import random
@@ -37,10 +38,22 @@ total_len = 140
 max_brightness = 150
 brightness_coeff = 150.0/255
 
+#animations
+#priority - integer assumed constant
+#done - true when animation finished
+#animate - draws animation frame on given pixels
+
+
 class IdleAnimation:
   def __init__(self):
     self.battery_level = 0
     self.noise_clock = 0.01
+    
+  def priority(self):
+    return 0
+  
+  def done(self):
+    return False
     
   def animate(self, pixels, clock, clockdiff):
     """
@@ -133,12 +146,22 @@ class ConfirmAnimation:
   
   def __init__(self):
     self.start_clock = None
+    self.is_done = False
+    
+  def priority(self):
+    return 9;
+  
+  def done(self):
+    return self.is_done
 
   def animate(self, pixels, clock, clockdiff):
     if self.start_clock is None:
       self.start_clock = clock
 
-    duration = 0.05
+    duration = 0.02
+    if (clock - self.start_clock) > duration:
+      self.is_done = True
+      return
     current = math.fmod(clock - self.start_clock, duration) * ConfirmAnimation.bar_len * 2 / duration
     head_pos = abs(ConfirmAnimation.bar_len -  current)
     if current <= ConfirmAnimation.bar_len:
@@ -170,7 +193,13 @@ class ConfirmAnimation:
     
     return (0 , 0, 0)
 
-animations = [IdleAnimation(), WaitingAnimation(), ConfirmAnimation()]
+animations = [IdleAnimation()]
+
+def add_animation(anim, remove_callback = None):
+  animations.insert(anim.priority(), anim)
+  
+def remove_animation(anim):
+  animations.remove(anim)
 
 def animate():
   rate = rospy.Rate(20)
@@ -183,16 +212,28 @@ def animate():
     clock_diff = clock - last_clock
     if client is not None:
       for anim in animations:
+        if (anim is None):
+          continue
         anim.animate(pixels, clock, clock_diff)
+        if (anim.done()):
+          remove_animation(anim)
       if client.put_pixels(pixels, channel=0):
         pass
       else:
         rospy.logerr("Could not send pixels to opc server!")
     rate.sleep()
+    
+
+    
+def confirm_req_sent(msg):
+  rospy.loginfo("Starting confirm animation!")
+  add_animation(ConfirmAnimation())
+  
 
 #node code:
 rospy.init_node('led_control')
-sub = rospy.Subscriber('battery_level', Int32, lambda msg: animations[0].battery_level_changed(msg.data))
-sub = rospy.Subscriber('opc_info', String, opc_server_changed)
+battery_sub = rospy.Subscriber('battery_level', Int32, lambda msg: animations[0].battery_level_changed(msg.data))
+confirm_anim_sub = rospy.Subscriber('oneshot_anim_confitm', Empty, confirm_req_sent)
+opc_info_sub = rospy.Subscriber('opc_info', String, opc_server_changed)
 animate()
 
