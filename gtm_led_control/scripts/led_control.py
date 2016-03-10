@@ -3,15 +3,17 @@
 Topics subscribed to:
 battery_level - int32 value 0-100 to display, latched
 opc_info - string adress:port of opc server
-oneshot_anim_confitm - empty - when message received starts confirm animation
+oneshot_anim - OneshotAnimationInfo - when message received starts a oneshot animation with given id
 """
 
 import rospy
 from std_msgs.msg import Int32, String, Empty
+from gtm_animation_msgs.msg import OneshotAnimationInfo, LoopAnimationAction, LoopAnimationGoal, LoopAnimationResult
 import opc
 import time
 import random
 import math
+import actionlib
 
 client = None
 
@@ -114,6 +116,12 @@ class WaitingAnimation:
   
   def __init__(self):
     self.start_clock = None
+    
+  def priority(self):
+    return 3
+  
+  def done(self):
+    return False
 
   def animate(self, pixels, clock, clockdiff):
     if self.start_clock is None:
@@ -225,15 +233,28 @@ def animate():
     
 
     
-def confirm_req_sent(msg):
-  rospy.loginfo("Starting confirm animation!")
+def oneshot_req_sent(msg):
+  rospy.loginfo("Starting oneshot animation %s!", msg.animation_id)
   add_animation(ConfirmAnimation())
   
+def loop_req_sent():
+  rospy.loginfo("Starting loop animation")
+  loop_server.accept_new_goal()
+  add_animation(WaitingAnimation())
+  
+def loop_req_aborted():
+  rospy.loginfo("Preempted loop animation!")
+  return
 
 #node code:
 rospy.init_node('led_control')
 battery_sub = rospy.Subscriber('battery_level', Int32, lambda msg: animations[0].battery_level_changed(msg.data))
-confirm_anim_sub = rospy.Subscriber('oneshot_anim_confitm', Empty, confirm_req_sent)
+confirm_anim_sub = rospy.Subscriber('oneshot_anim', OneshotAnimationInfo, oneshot_req_sent)
 opc_info_sub = rospy.Subscriber('opc_info', String, opc_server_changed)
+loop_server = actionlib.SimpleActionServer('loop_animation', LoopAnimationAction, None, False)
+loop_server.register_goal_callback(loop_req_sent)
+loop_server.register_preempt_callback(loop_req_aborted)
+loop_server.start()
+
 animate()
 
